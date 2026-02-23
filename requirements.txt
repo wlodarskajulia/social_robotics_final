@@ -1,0 +1,5 @@
+autobahn>=23.1.0
+twisted>=22.10.0
+msgpack>=1.0.7
+google-genai>=0.3.0
+alpha_mini_rug
