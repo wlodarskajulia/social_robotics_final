@@ -19,22 +19,28 @@ appropriate and encourgae collaboration. You will be the one introducting the ta
 to the participant. Allow the user to solve many things by themselves, but also propose something.
 You should act as if you are a companion on their level, so you can reach the conclusion together. 
 """
+conversation = []
 
 #Conversation history
-conversation = [
-    types.Content(
-        role="user",
-        parts=[types.Part(text=SYSTEM_INSTRUCTION)]
+response = chatbot.models.generate_content(
+    model="gemini-2.5-flash",
+    contents=conversation,
+    config=types.GenerateContentConfig(
+        system_instruction=SYSTEM_INSTRUCTION
     )
-]
+)
 
 exit_conditions = (":q", "quit", "exit")
 
 # Global flags to coordinate between the main loop and the asr function
 finish_dialogue = False # Indicates when a full utterance is ready
 query = "" # Stores the utterance
-robot_is_director = None # Tracks if robot is a director
-secret_word = None # Stores the secret word when the robot is the director
+debug_list = [] # Stores the actions happening during the experiment
+
+def print_debug_list(list_to_print: list[str]):
+    for i, element in enumerate(list_to_print):
+        print(i, element)
+
 
 def asr(frames: dict):
     """
@@ -50,18 +56,60 @@ def asr(frames: dict):
         print("ASR response: ",query)
         finish_dialogue = True
 
+class RobotMovements:
+    def __init__(self, session):
+        self.session = session
+        self.tag_map = {
+            "TRIGGER1": "nod",
+            "TRIGGER2": "shake_head",
+            "TRIGGER3": "wave",
+            "TRIGGER4": "think"
+        }
+    def nod(self):
+        """Triggered by TRIGGER1"""
+        debug_list.append("nod() called")
+
+    def shake_head(self):
+        """Triggered by TRIGGER2"""
+        debug_list.append("shake_head() called")
+
+    def wave(self):
+        """Triggered by TRIGGER3"""
+        debug_list.append("wave() called")
+
+    def think(self):
+        """Triggered by TRIGGER4"""
+        debug_list.append("think() called")
+
+    def perform_based_on_tags(self, response_text: str):
+        debug_list.append(f"perform_based_on_tags() called, response_text: {response_text}")
+        for tag, method_name in self.tag_map.items():
+            if tag in response_text:
+                debug_list.append(f"I found this tag: {tag}")
+                getattr(self, method_name)()
+        
+    def strip_response_text(self, response_text: str):
+        for tag in self.tag_map:
+            if tag in response_text:
+                response_text = re.sub(tag, "", response_text)
+        debug_list.append(f"strip_response_text() executed, new response: {response_text}")
+        return response_text.strip()
+
 @inlineCallbacks
 def main(session, details):
     """
     Main dialogue loop for the robot's setup and responses
     """
-    global finish_dialogue, query, response, robot_is_director, secret_word
+    global finish_dialogue, query, response
     yield session.call("rie.dialogue.config.language", lang="en")
     yield session.call("rom.optional.behavior.play",name="BlocklyStand")
 
+    movements = RobotMovements(session)
+
     # Prompt from the robot to the user to say something
-    intro_text = "Hi, I am Mini. Do you want to play a game of 'With other Words' with me?"
-    yield session.call("rie.dialogue.say_animated", text=intro_text)
+    intro_text = "Hi, I am Mini. Let's solve the mystery together!"
+    movements.perform_based_on_tags(intro_text)
+    yield session.call("rie.dialogue.say_animated", text=movements.strip_response_text(intro_text))
 
     
     yield session.subscribe(asr, "rie.dialogue.stt.stream")
@@ -71,11 +119,13 @@ def main(session, details):
     dialogue = True
     while dialogue:
         if (finish_dialogue):
+
             # Handle explicit exit commands
             if query in exit_conditions:
                 dialogue = False
                 yield session.call("rie.dialogue.say_animated", text="Ok, I will leave you then")
                 break
+
             # Handle valid user input
             elif (query != ""):
                 # Stop the STT to avoid capturing robot speech
@@ -88,21 +138,14 @@ def main(session, details):
                         parts=[types.Part(text=query)]
                     )
                 )
+
                 # Generate response from Gemini
                 response = chatbot.models.generate_content(
                     model="gemini-2.5-flash",
                     contents=conversation
                 )
-                
-                response_from_robot = response.text
-                clue_1 = "SECRET_WORD:"
 
-                if robot_is_director is True and secret_word is None and clue_1 in response_from_robot:
-                    # Take everything after SECRET_WORD:
-                    after_keyword = response_from_robot.split(clue_1, 1)[1]
-                    # Extract only the first word after it
-                    secret_word = after_keyword.strip().split()[0]
-                    print(f"[DEBUG] Robot picked secret word: {secret_word}")
+                response_from_robot = response.text
 
                 # Add the model's response to conversation memory
                 conversation.append(
@@ -112,23 +155,22 @@ def main(session, details):
                     )
                 )
 
-                # Remove the SECRET_WORD line or inline occurrence completely
-                response_text = re.sub(r"SECRET_WORD:\s*[^\s\n]+", "", response_from_robot)
-                response_text = response_text.strip()
+                response_text = movements.strip_response_text(response_from_robot)
 
-                # Close the microphone, speak the response, activate the microphone again
-                yield session.call("rie.dialogue.stt.close")
+                # Fire movement in parallel, then speak
+                movements.perform_based_on_tags(response_from_robot)
                 yield session.call("rie.dialogue.say_animated", text=response_text)
                 yield session.call("rie.dialogue.stt.stream")
 
             else: # Edge case, empty dialogue
                 yield session.call("rie.dialogue.stt.close")
-                yield session.call("rie.dialogue.say_animated", text=response_text)
+                yield session.call("rie.dialogue.say_animated", text="Sorry, what did you say?")
                 yield session.call("rie.dialogue.stt.stream")
 
             # Reset global flags
             finish_dialogue = False
             query = ""
+            print_debug_list(debug_list)
             # Prevent immediate re-entering the loop
             yield sleep(0.2)
 
