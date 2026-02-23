@@ -1,11 +1,9 @@
-from alpha_mini_rug import perform_movement
 from autobahn.twisted.component import Component, run
 from autobahn.twisted.util import sleep
 from google import genai
 from google.genai import types
 from twisted.internet.defer import inlineCallbacks
 
-import random
 import re
 
 API_KEY = "set_your_API_KEY"
@@ -15,47 +13,11 @@ chatbot = genai.Client(api_key=API_KEY)
 # Sytem Instructions for the chatbot. This is a prompt that tells the chatbot how to respond to the user.
 
 SYSTEM_INSTRUCTION = """
-#context
-You are a friendly social robot and a fun game companion. You are
-playing a game of 'With Other Words' (aka Taboo). You can take both
-the director and matcher roles. As the director, you give clues for a
-secret word without using the word itself. As the matcher, the user
-gives you clues, and you must guess the word.
-
-#user profile
-The user is a general audience. The user may speak with small pauses or hesitation, so wait
-patiently before responding.
-
-#instructions
-1. You start by asking the user if they want to play as the director
-or the matcher. The user can also choose to exit the game by saying 'exit' or 'quit'.
-
-2. If the user chooses director, the user will then give you clues to
-guess the secret word. Listen to the user's clues patiently and try to
-guess the word accurately. If you guess the word correctly,
-congratulate the user with a cheer or a joke and ask if they want to
-play again or exit. If you guess incorrectly, encourage the user to
-give more clues or try again. If the user gives up, ask if they want
-to play again or exit.
-
-3. If the user chooses a matcher, you will pick a secret word and give
-creative clues without using the word itself or related forbidden
-terms. When you first pick your secret word, include it in your response 
-using this exact format on a new line: "SECRET_WORD: word".
-If the user guesses the secret word correctly, congratulate them with
-a cheer or a joke and ask if they want to play again or exit. If they
-guess incorrectly, encourage them to try again or give additional
-clues. If they clearly state that they give up, reveal the word, cheer
-them up, and ask if they want to play again or exit.
-
-4. The game continues until the secret word is correctly guessed or
-the user decides to end the game by saying 'exit' or 'quit'.
-
-#additional information
-Throughout the game, you respond in a very brief, short, conversational,
-approachable, and friendly style. Only speak when it is clearly your
-turn. Wait for complete user clues before responding. Never reveal the
-secret word unless clearly stated otherwise by the user. Never say "asterisk" nor pronounce "*". 
+You are a cooperaive collegue and together with user you share a common
+goal to solve the task together. You must provide task-relevant hints when
+appropriate and encourgae collaboration. You will be the one introducting the task
+to the participant. Allow the user to solve many things by themselves, but also propose something.
+You should act as if you are a companion on their level, so you can reach the conclusion together. 
 """
 
 #Conversation history
@@ -88,69 +50,6 @@ def asr(frames: dict):
         print("ASR response: ",query)
         finish_dialogue = True
 
-def generate_movement(text, delta_t=1.5):
-    """
-    Generates random, small movements for the robot based on estimated
-    speech duration.
-    
-    Args:
-        text (str): Text that the robot will speak.
-        delta_t (float): Time step between movement frames in seconds.
-    """
-    # Estimate speech duration
-    word_count = len(text.split())
-    speech_duration = word_count * 0.2 # 0.2s per word
-
-    n_frames = int(speech_duration / delta_t)
-    frames = []
-
-    for i in range(n_frames):
-        # Head movements
-        head_pitch = random.uniform(-0.09, 0.09)
-        head_yaw   = random.uniform(-0.45, 0.45)
-        head_roll = random.uniform(-0.09, 0.09)  
-
-        # Arm movements
-        right_arm = random.uniform(-1.5, 0) 
-        left_arm = random.uniform(-1.5, 0) 
-
-        frame = {
-            "time": i * delta_t * 1000,  # miliseconds
-            "data": {
-                "body.head.pitch": head_pitch,
-                "body.head.yaw": head_yaw,
-                "body.head.roll": head_roll,
-                "body.arms.right.upper.pitch": right_arm,
-                "body.arms.left.upper.pitch": left_arm,
-            }
-        }
-        frames.append(frame)
-
-    return frames
-
-@inlineCallbacks
-def speak_with_movement(session, text):
-    """
-    Make the robot speak while performing movement.
-    """
-    # Estimate syllables for timing
-    num_of_words = len(text.split())
-    n_syllables = num_of_words * 1.5
-    delta_t = 0.2
-    M = 2
-
-    # Generate frames
-    frames_list = generate_movement(text, delta_t=delta_t)
-
-    # Perform the micro-movements in parallel
-    perform_movement(session, frames=frames_list, force=True)
-
-    # Start speaking
-    yield session.call("rie.dialogue.say", text=text)
-
-    # Sleep to let movements complete
-    yield sleep((n_syllables - M) * delta_t)
-
 @inlineCallbacks
 def main(session, details):
     """
@@ -162,7 +61,8 @@ def main(session, details):
 
     # Prompt from the robot to the user to say something
     intro_text = "Hi, I am Mini. Do you want to play a game of 'With other Words' with me?"
-    yield speak_with_movement(session, intro_text)
+    yield session.call("rie.dialogue.say_animated", text=intro_text)
+
     
     yield session.subscribe(asr, "rie.dialogue.stt.stream")
     yield session.call("rie.dialogue.stt.stream")
@@ -174,7 +74,7 @@ def main(session, details):
             # Handle explicit exit commands
             if query in exit_conditions:
                 dialogue = False
-                yield speak_with_movement(session, "Ok, I will leave you then")
+                yield session.call("rie.dialogue.say_animated", text="Ok, I will leave you then")
                 break
             # Handle valid user input
             elif (query != ""):
@@ -218,12 +118,12 @@ def main(session, details):
 
                 # Close the microphone, speak the response, activate the microphone again
                 yield session.call("rie.dialogue.stt.close")
-                yield speak_with_movement(session, response_text)
+                yield session.call("rie.dialogue.say_animated", text=response_text)
                 yield session.call("rie.dialogue.stt.stream")
 
             else: # Edge case, empty dialogue
                 yield session.call("rie.dialogue.stt.close")
-                yield speak_with_movement(session, "Sorry, what did you say?")
+                yield session.call("rie.dialogue.say_animated", text=response_text)
                 yield session.call("rie.dialogue.stt.stream")
 
             # Reset global flags
