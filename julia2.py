@@ -58,7 +58,6 @@ class RobotMovements:
             "TRIGGER3": "wave",
             "TRIGGER4": "think"
         }
-    @inlineCallbacks
     def nod(self):
         """Triggered by TRIGGER1"""
         debug_list.append("nod() called")
@@ -66,48 +65,33 @@ class RobotMovements:
         yield perform_movement(
             self.session,
             frames=[
-                {"time": 400, "data": {"body.head.pitch": 0.15}},
-                {"time": 1200, "data": {"body.head.pitch": -0.15}},
-                {"time": 2000, "data": {"body.head.pitch": 0.15}},
+                {"time": 400, "data": {"body.head.pitch": 0.1}},
+                {"time": 1200, "data": {"body.head.pitch": -0.1}},
+                {"time": 2000, "data": {"body.head.pitch": 0.1}},
                 {"time": 2400, "data": {"body.head.pitch": 0.0}}
             ],
             force=True
         )
 
-    @inlineCallbacks
     def shake_head(self):
         """Triggered by TRIGGER2"""
         debug_list.append("shake_head() called")
-        print(" want to shake")
-        yield perform_movement(
-            self.session,
-            frames=[
-                {"time": 400, "data": {"body.head.yaw": 0.5}},
-                {"time": 1200, "data": {"body.head.yaw": -0.5}},
-                {"time": 2000, "data": {"body.head.yaw": 0.5}},
-                {"time": 2400, "data": {"body.head.yaw": 0.0}}
-            ],
-            force=True
-        )
 
-    @inlineCallbacks
     def wave(self):
         """Triggered by TRIGGER3"""
         debug_list.append("wave() called")
 
-    @inlineCallbacks
     def think(self):
         """Triggered by TRIGGER4"""
         debug_list.append("think() called")
 
-    @inlineCallbacks
     def perform_based_on_tags(self, response_text: str):
         debug_list.append(f"perform_based_on_tags() called, response_text: {response_text}")
         for tag, method_name in self.tag_map.items():
             if tag in response_text:
                 debug_list.append(f"I found this tag: {tag}")
-                yield getattr(self, method_name)()
-    
+                getattr(self, method_name)()
+        
     def strip_response_text(self, response_text: str):
         for tag in self.tag_map:
             if tag in response_text:
@@ -159,7 +143,7 @@ def main(session, details):
 
     # Prompt from the robot to the user to say something
     intro_text = "Hi, I am Mini. Let's solve the mystery together!"
-    yield movements.perform_based_on_tags(intro_text)
+    movements.perform_based_on_tags(intro_text)
     yield session.call("rie.dialogue.say_animated", text=movements.strip_response_text(intro_text))
 
     yield session.subscribe(asr, "rie.dialogue.stt.stream")
@@ -205,9 +189,9 @@ def main(session, details):
                     )
                 )
 
-                test_response = "TRIGGER2 hello"
-                print("he should shake")
-                yield movements.perform_based_on_tags(test_response)
+                test_response = "TRIGGER1 hello"
+                print("he should nod")
+                movements.perform_based_on_tags(test_response)
                 # Fire movement in parallel, then speak
                 #movements.perform_based_on_tags(response_from_robot)
 
