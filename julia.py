@@ -14,21 +14,20 @@ API_KEY = "AIzaSyCr5L0bpehbvhOVoFONEUblW07hxGusQjk"
 chatbot = genai.Client(api_key=API_KEY)
 
 # Sytem Instructions for the chatbot. This is a prompt that tells the chatbot how to respond to the user.
-#SYSTEM_INSTRUCTION = prompt_for_robot
+# SYSTEM_INSTRUCTION = prompt_for_robot
 SYSTEM_INSTRUCTION = "Have a basic conversation with the user. Ask about the weather, day, name. Keep your responses up to 10 words."
 conversation = []
 
 # Gemini configuration reused across calls
-GEMINI_CONFIG = types.GenerateContentConfig(
-    system_instruction=SYSTEM_INSTRUCTION
-)
+GEMINI_CONFIG = types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION)
 
 exit_conditions = (":q", "quit", "exit")
 
 # Global flags to coordinate between the main loop and the asr function
-finish_dialogue = False # Indicates when a full utterance is ready
-query = "" # Stores the utterance
-debug_list = [] # Stores the actions happening during the experiment
+finish_dialogue = False  # Indicates when a full utterance is ready
+query = ""  # Stores the utterance
+debug_list = []  # Stores the actions happening during the experiment
+
 
 def print_debug_list(list_to_print: list[str]):
     for i, element in enumerate(list_to_print):
@@ -37,17 +36,18 @@ def print_debug_list(list_to_print: list[str]):
 
 def asr(frames: dict):
     """
-    ASR callback function which get triggered every time the user is done speaking. 
+    ASR callback function which get triggered every time the user is done speaking.
     Sets speech to text.
     """
     global finish_dialogue
     global query
     if frames["data"]["body"]["final"]:
         query = str(frames["data"]["body"]["text"]).strip()
-        if len(query.split()) < 1: #ignore empty queries
+        if len(query.split()) < 1:  # ignore empty queries
             return
         print("ASR response: ", query)
         finish_dialogue = True
+
 
 class RobotMovements:
     def __init__(self, session):
@@ -56,8 +56,10 @@ class RobotMovements:
             "TRIGGER1": "nod",
             "TRIGGER2": "shake_head",
             "TRIGGER3": "wave",
-            "TRIGGER4": "think"
+            "TRIGGER4": "think",
         }
+        self.text = None
+
     @inlineCallbacks
     def nod(self):
         """Triggered by TRIGGER1"""
@@ -69,9 +71,9 @@ class RobotMovements:
                 {"time": 400, "data": {"body.head.pitch": 0.15}},
                 {"time": 1200, "data": {"body.head.pitch": -0.15}},
                 {"time": 2000, "data": {"body.head.pitch": 0.15}},
-                {"time": 2400, "data": {"body.head.pitch": 0.0}}
+                {"time": 2400, "data": {"body.head.pitch": 0.0}},
             ],
-            force=True
+            force=True,
         )
 
     @inlineCallbacks
@@ -85,15 +87,33 @@ class RobotMovements:
                 {"time": 400, "data": {"body.head.yaw": 0.5}},
                 {"time": 1200, "data": {"body.head.yaw": -0.5}},
                 {"time": 2000, "data": {"body.head.yaw": 0.5}},
-                {"time": 2400, "data": {"body.head.yaw": 0.0}}
+                {"time": 2400, "data": {"body.head.yaw": 0.0}},
             ],
-            force=True
+            force=True,
         )
 
     @inlineCallbacks
     def wave(self):
-        """Triggered by TRIGGER3"""
-        debug_list.append("wave() called")
+            """Triggered by TRIGGER3"""
+            debug_list.append("wave() called")
+            print("I want to wave")
+            perform_movement(
+                self.session,
+                frames=[{"time": 612.44, "data": {"body.arms.left.upper.pitch": -2.1}}],
+                force=True,
+            )
+            perform_movement(
+                self.session,
+                frames=[
+                    {"time": 612.44, "data": {"body.arms.left.lower.roll": -0.6}},
+                    {"time": 854, "data": {"body.arms.left.lower.roll": -0.8}},
+                    {"time": 1300, "data": {"body.arms.left.lower.roll": -0.2}},
+                    {"time": 1715, "data": {"body.arms.left.lower.roll": -0.8}},
+                    {"time": 2120, "data": {"body.arms.left.lower.roll": -0.2}},
+                ],
+                force=True,
+            )
+            yield self.session.call("rie.dialogue.say", text=self.text)
 
     @inlineCallbacks
     def think(self):
@@ -102,21 +122,27 @@ class RobotMovements:
 
     @inlineCallbacks
     def perform_based_on_tags(self, response_text: str):
-        debug_list.append(f"perform_based_on_tags() called, response_text: {response_text}")
+        debug_list.append(
+            f"perform_based_on_tags() called, response_text: {response_text}"
+        )
         for tag, method_name in self.tag_map.items():
             if tag in response_text:
                 debug_list.append(f"I found this tag: {tag}")
                 yield getattr(self, method_name)()
-    
+
     def strip_response_text(self, response_text: str):
         for tag in self.tag_map:
             if tag in response_text:
                 response_text = re.sub(tag, "", response_text)
-        debug_list.append(f"strip_response_text() executed, new response: {response_text}")
+        debug_list.append(
+            f"strip_response_text() executed, new response: {response_text}"
+        )
         return response_text.strip()
-    
+
+
 class RobotFaceTracking:
     """Handle face detection and tracking."""
+
     def __init__(self, session):
         self.session = session
 
@@ -139,8 +165,8 @@ class RobotFaceTracking:
     @inlineCallbacks
     def stop_tracking(self):
         yield self.session.call("rie.vision.face.track.stop")
- 
-    
+
+
 @inlineCallbacks
 def main(session, details):
     """
@@ -148,19 +174,19 @@ def main(session, details):
     """
     global finish_dialogue, query, response
     yield session.call("rie.dialogue.config.language", lang="en")
-    yield session.call("rom.optional.behavior.play",name="BlocklyStand")
+    yield session.call("rom.optional.behavior.play", name="BlocklyStand")
 
     movements = RobotMovements(session)
-    face_track = RobotFaceTracking(session)
+    #face_track = RobotFaceTracking(session)
 
     # Start face detection and tracking
-    yield face_track.find_face()
-    yield face_track.track_face()
+    #yield face_track.find_face()
 
     # Prompt from the robot to the user to say something
     intro_text = "Hi, I am Mini. Let's solve the mystery together!"
+    movements.text = intro_text
     yield movements.perform_based_on_tags(intro_text)
-    yield session.call("rie.dialogue.say_animated", text=movements.strip_response_text(intro_text))
+    yield sleep (5)
 
     yield session.subscribe(asr, "rie.dialogue.stt.stream")
     yield session.call("rie.dialogue.stt.stream")
@@ -168,31 +194,28 @@ def main(session, details):
     # While user did not say exit or quit
     dialogue = True
     while dialogue:
-        if (finish_dialogue):
-
+        if finish_dialogue:
             # Handle explicit exit commands
             if query in exit_conditions:
                 dialogue = False
-                yield session.call("rie.dialogue.say_animated", text="Ok, I will leave you then")
+                yield session.call(
+                    "rie.dialogue.say_animated", text="Ok, I will leave you then"
+                )
                 break
 
             # Handle valid user input
-            elif (query != ""):
+            elif query != "":
                 # Stop the STT to avoid capturing robot speech
                 yield session.call("rie.dialogue.stt.close")
 
                 # Append the message to the conversation history
                 conversation.append(
-                    types.Content(
-                        role="user",
-                        parts=[types.Part(text=query)]
-                    )
+                    types.Content(role="user", parts=[types.Part(text=query)])
                 )
 
                 # Generate response from Gemini
                 response = chatbot.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=conversation
+                    model="gemini-2.5-flash", contents=conversation
                 )
 
                 response_from_robot = response.text
@@ -200,8 +223,7 @@ def main(session, details):
                 # Add the model's response to conversation memory
                 conversation.append(
                     types.Content(
-                        role="model",
-                        parts=[types.Part(text=response_from_robot)]
+                        role="model", parts=[types.Part(text=response_from_robot)]
                     )
                 )
 
@@ -209,14 +231,16 @@ def main(session, details):
                 print("he should shake")
                 yield movements.perform_based_on_tags(test_response)
                 # Fire movement in parallel, then speak
-                #movements.perform_based_on_tags(response_from_robot)
+                # movements.perform_based_on_tags(response_from_robot)
 
                 response_text = movements.strip_response_text(response_from_robot)
                 yield session.call("rie.dialogue.say_animated", text=response_text)
 
-            else: # Edge case, empty dialogue
+            else:  # Edge case, empty dialogue
                 yield session.call("rie.dialogue.stt.close")
-                yield session.call("rie.dialogue.say_animated", text="Sorry, what did you say?")
+                yield session.call(
+                    "rie.dialogue.say_animated", text="Sorry, what did you say?"
+                )
 
             # Reset global flags
             finish_dialogue = False
@@ -236,15 +260,18 @@ def main(session, details):
     # Close the STT stream
     yield session.call("rie.dialogue.stt.close")
     # Let the robot crouch
-    yield session.call("rom.optional.behavior.play",name="BlocklyCrouch")
+    yield session.call("rom.optional.behavior.play", name="BlocklyCrouch")
     session.leave()
 
+
 wamp = Component(
-    transports=[{
-        "url": "ws://wamp.robotsindeklas.nl",
-        "serializers": ["msgpack"],
-        "max_retries": 0
-    }],
+    transports=[
+        {
+            "url": "ws://wamp.robotsindeklas.nl",
+            "serializers": ["msgpack"],
+            "max_retries": 0,
+        }
+    ],
     realm="rie.699ee4a05c33d0f8536fead0",
 )
 
