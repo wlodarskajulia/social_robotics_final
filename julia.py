@@ -48,24 +48,56 @@ def asr(frames: dict):
         print("ASR response: ", query)
         finish_dialogue = True
 
+def parse_text(text: str) -> list[tuple[str, str]]:
+    # list[tuple[label, text_to_say]]
+    # labels = [TRIGGER1, ..., TRIGGER5, NO_TRIGGER]
+    # In the text, the trigger has to be in front of the statement that we want to trigger
+    # e.g. "TRIGGER1 Hi my name is Julia! TRIGGER2 Could you specify that? TRIGGER2 If not that bye"
+
+    trigger_words = ["NOD", "SHAKE", "THINK", "POINT", "WAVE"]
+    indexed_text = []
+
+    # Split the text into words
+    words = text.split()
+    current_segment = []
+    current_label = "NO_TRIGGER"
+
+    for word in words:
+        if word in trigger_words:
+            # If we have accumulated words, save them with the previous label
+            if current_segment:
+                indexed_text.append((current_label, " ".join(current_segment)))
+                current_segment = []
+            # Start new segment with the trigger label
+            current_label = word
+        else:
+            current_segment.append(word)
+    
+    # Append the last segment
+    if current_segment:
+        indexed_text.append((current_label, " ".join(current_segment)))
+    
+    return indexed_text
+
 
 class RobotMovements:
     def __init__(self, session):
         self.session = session
         self.tag_map = {
-            "TRIGGER1": "nod",
-            "TRIGGER2": "shake_head",
-            "TRIGGER3": "wave",
-            "TRIGGER4": "think",
+            "NOD": "nod",
+            "SHAKE": "shake_head",
+            "WAVE": "wave",
+            "THINK": "think",
+            "POINT": "point",
         }
         self.text = None
 
     @inlineCallbacks
     def nod(self):
-        """Triggered by TRIGGER1"""
+        """Triggered by NOD"""
         debug_list.append("nod() called")
         print(" want to nod")
-        yield perform_movement(
+        perform_movement(
             self.session,
             frames=[
                 {"time": 400, "data": {"body.head.pitch": 0.15}},
@@ -75,13 +107,14 @@ class RobotMovements:
             ],
             force=True,
         )
+        yield self.session.call("rie.dialogue.say", text=self.text)
 
     @inlineCallbacks
     def shake_head(self):
-        """Triggered by TRIGGER2"""
+        """Triggered by SHAKE"""
         debug_list.append("shake_head() called")
         print(" want to shake")
-        yield perform_movement(
+        perform_movement(
             self.session,
             frames=[
                 {"time": 400, "data": {"body.head.yaw": 0.5}},
@@ -91,10 +124,11 @@ class RobotMovements:
             ],
             force=True,
         )
+        yield self.session.call("rie.dialogue.say", text=self.text)
 
     @inlineCallbacks
     def wave(self):
-            """Triggered by TRIGGER3"""
+            """Triggered by WAVE"""
             debug_list.append("wave() called")
             print("I want to wave")
             perform_movement(
@@ -117,8 +151,35 @@ class RobotMovements:
 
     @inlineCallbacks
     def think(self):
-        """Triggered by TRIGGER4"""
+        """Triggered by THINK"""
         debug_list.append("think() called")
+        # perform_movement ...
+        yield self.session.call("rie.dialogue.say", text=self.text)
+
+    @inlineCallbacks
+    def point(self):
+        """Triggered by POINT"""
+        debug_list.append("point() called")
+        print(" want to point")
+        perform_movement(
+            self.session,
+            frames=[
+                {"time": 400, "data": {
+                    "body.torso.yaw": 0.500, 
+                    "body.arms.left.upper.pitch": -0.59}},
+                {"time": 1200, "data": {
+                    "body.arms.left.lower.roll": -1.70, 
+                    "body.arms.right.upper.pitch": 1.00}},
+                {"time": 2000, "data": {
+                    "body.arms.left.lower.roll": 0.0, 
+                    "body.arms.right.upper.pitch": 0.0}},
+                {"time": 2400, "data": {
+                    "body.torso.jaw": 0.0, 
+                    "body.arms.left.upper.pitch": 0.0}}
+            ],
+            force=True      
+        )
+        yield self.session.call("rie.dialogue.say", text=self.text)
 
     @inlineCallbacks
     def perform_based_on_tags(self, response_text: str):
@@ -127,8 +188,17 @@ class RobotMovements:
         )
         for tag, method_name in self.tag_map.items():
             if tag in response_text:
+                self.text = response_text
                 debug_list.append(f"I found this tag: {tag}")
                 yield getattr(self, method_name)()
+
+    @inlineCallbacks
+    def perform_tag(self, response_text: str, tag: str):
+        # DOES IT WORK
+        self.text = response_text
+        debug_list.append(f"I found this tag: {tag}")
+        method_name = self.tag_map[tag]
+        yield getattr(self, method_name)()
 
     def strip_response_text(self, response_text: str):
         for tag in self.tag_map:
@@ -138,7 +208,6 @@ class RobotMovements:
             f"strip_response_text() executed, new response: {response_text}"
         )
         return response_text.strip()
-
 
 class RobotFaceTracking:
     """Handle face detection and tracking."""
@@ -166,6 +235,19 @@ class RobotFaceTracking:
     def stop_tracking(self):
         yield self.session.call("rie.vision.face.track.stop")
 
+def speak(session, text: str):
+    # list[tuple[label, text]]
+    # labels = [NOD, ..., POINT, NO_TRIGGER]
+    indexed_text = parse_text(text)
+    movements = RobotMovements(session)
+    for element in indexed_text:
+        label, text_to_say = element
+        if label == "NO_TRIGGER":
+            yield session.call("rie.dialogue.say_animated", text=text_to_say)
+        else:
+            yield movements.perform_tag(text_to_say, label)
+            yield sleep(5)
+
 
 @inlineCallbacks
 def main(session, details):
@@ -183,10 +265,8 @@ def main(session, details):
     #yield face_track.find_face()
 
     # Prompt from the robot to the user to say something
-    intro_text = "Hi, I am Mini. Let's solve the mystery together!"
-    movements.text = intro_text
-    yield movements.perform_based_on_tags(intro_text)
-    yield sleep (5)
+    intro_text = "NO_TRIGGER Hi, I am Mini. Let's solve the mystery together!"
+    speak(session, intro_text)
 
     yield session.subscribe(asr, "rie.dialogue.stt.stream")
     yield session.call("rie.dialogue.stt.stream")
@@ -198,9 +278,7 @@ def main(session, details):
             # Handle explicit exit commands
             if query in exit_conditions:
                 dialogue = False
-                yield session.call(
-                    "rie.dialogue.say_animated", text="Ok, I will leave you then"
-                )
+                speak(session, "OK, I will leave you then.")
                 break
 
             # Handle valid user input
@@ -227,20 +305,14 @@ def main(session, details):
                     )
                 )
 
-                test_response = "TRIGGER2 hello"
-                print("he should shake")
-                yield movements.perform_based_on_tags(test_response)
-                # Fire movement in parallel, then speak
-                # movements.perform_based_on_tags(response_from_robot)
-
-                response_text = movements.strip_response_text(response_from_robot)
-                yield session.call("rie.dialogue.say_animated", text=response_text)
+                test_response = "WAVE hello, nice to see you"
+                print("he should wave")
+                speak(session, test_response)
+                # speak(session, response_from_robot)
 
             else:  # Edge case, empty dialogue
                 yield session.call("rie.dialogue.stt.close")
-                yield session.call(
-                    "rie.dialogue.say_animated", text="Sorry, what did you say?"
-                )
+                speak(session, "NO_TRIGGER Sorry, what did you say?")
 
             # Reset global flags
             finish_dialogue = False
