@@ -153,7 +153,24 @@ class RobotMovements:
     def think(self):
         """Triggered by THINK"""
         debug_list.append("think() called")
-        # perform_movement ...
+        print("I want to think")
+        perform_movement(
+                self.session,
+                frames=[{"time": 612.44, "data": {
+                    "body.head.pitch": -0.3,
+                    "body.head.yaw": 0.15}}],
+                force=True,
+            )
+        perform_movement(
+                self.session,
+                frames=[
+                    {"time": 612.44, "data": {
+                        "body.arms.left.shoulder.pitch": 0.8, 
+                        "body.arms.left.shoulder.roll": -0.2,
+                        "body.arms.left.lower.roll": -1.2}},
+                ],
+                force=True,
+            )
         yield self.session.call("rie.dialogue.say", text=self.text)
 
     @inlineCallbacks
@@ -235,18 +252,18 @@ class RobotFaceTracking:
     def stop_tracking(self):
         yield self.session.call("rie.vision.face.track.stop")
 
+@inlineCallbacks
 def speak(session, text: str):
     # list[tuple[label, text]]
     # labels = [NOD, ..., POINT, NO_TRIGGER]
     indexed_text = parse_text(text)
     movements = RobotMovements(session)
-    for element in indexed_text:
-        label, text_to_say = element
+    for label, text_to_say in indexed_text:
         if label == "NO_TRIGGER":
             yield session.call("rie.dialogue.say_animated", text=text_to_say)
         else:
             yield movements.perform_tag(text_to_say, label)
-            yield sleep(5)
+            yield sleep(0.5)
 
 
 @inlineCallbacks
@@ -258,15 +275,14 @@ def main(session, details):
     yield session.call("rie.dialogue.config.language", lang="en")
     yield session.call("rom.optional.behavior.play", name="BlocklyStand")
 
-    movements = RobotMovements(session)
-    #face_track = RobotFaceTracking(session)
+    face_track = RobotFaceTracking(session)
 
     # Start face detection and tracking
-    #yield face_track.find_face()
+    yield face_track.find_face()
 
     # Prompt from the robot to the user to say something
-    intro_text = "NO_TRIGGER Hi, I am Mini. Let's solve the mystery together!"
-    speak(session, intro_text)
+    intro_text = "WAVE Hi, I am Mini. POINT Who are you? NO TRIGGER I am happy to be talking to you today."
+    yield speak(session, intro_text)
 
     yield session.subscribe(asr, "rie.dialogue.stt.stream")
     yield session.call("rie.dialogue.stt.stream")
@@ -278,7 +294,7 @@ def main(session, details):
             # Handle explicit exit commands
             if query in exit_conditions:
                 dialogue = False
-                speak(session, "OK, I will leave you then.")
+                yield speak(session, "WAVE OK, I will leave you then.")
                 break
 
             # Handle valid user input
@@ -307,12 +323,12 @@ def main(session, details):
 
                 test_response = "WAVE hello, nice to see you"
                 print("he should wave")
-                speak(session, test_response)
-                # speak(session, response_from_robot)
+                yield speak(session, test_response)
+                # yield speak(session, response_from_robot)
 
             else:  # Edge case, empty dialogue
                 yield session.call("rie.dialogue.stt.close")
-                speak(session, "NO_TRIGGER Sorry, what did you say?")
+                yield speak(session, "NO_TRIGGER Sorry, what did you say?")
 
             # Reset global flags
             finish_dialogue = False
