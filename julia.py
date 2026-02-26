@@ -48,7 +48,7 @@ def asr(frames: dict):
         print("ASR response: ", query)
         finish_dialogue = True
 
-def parse_text(text: str) -> list[tuple[str, str]]:
+def parse_text(text: str, max_meanigful_length: int = 12) -> list[tuple[str, str]]:
     # list[tuple[label, text_to_say]]
     # labels = [TRIGGER1, ..., TRIGGER5, NO_TRIGGER]
     # In the text, the trigger has to be in front of the statement that we want to trigger
@@ -77,7 +77,21 @@ def parse_text(text: str) -> list[tuple[str, str]]:
     if current_segment:
         indexed_text.append((current_label, " ".join(current_segment)))
     
-    return indexed_text
+    final_text = []
+    for label, segment in indexed_text:
+        if label in trigger_words:
+            # split that text into first group of 12 and then rest
+            # the first group is still with trigger word, but the other is with NO_TRIGGER
+            segment_words = segment.split()
+            if len(segment_words) >= max_meanigful_length:
+                final_text.append((label, " ".join(segment_words[:12])))
+                final_text.append(("NO_TRIGGER", " ".join(segment_words[12:])))
+            else:
+                final_text.append((label, segment))
+        else:
+            final_text.append((label, segment))
+    
+    return final_text
 
 
 class RobotMovements:
@@ -271,7 +285,6 @@ class RobotMovements:
 
     @inlineCallbacks
     def perform_tag(self, response_text: str, tag: str):
-        # DOES IT WORK
         self.text = response_text
         debug_list.append(f"I found this tag: {tag}")
         method_name = self.tag_map[tag]
