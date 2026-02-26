@@ -108,7 +108,67 @@ class RobotMovements:
             force=True,
         )
         yield self.session.call("rie.dialogue.say", text=self.text)
+        
+    @inlineCallbacks
+    def point(self):
+        debug_list.append("point() called")
+        print("want to point")
 
+        yield perform_movement(
+            self.session,
+            frames=[
+                # Frame 2 — Prepare 
+                {
+                    "time": 600,
+                    "data": {
+                        "body.head.pitch": -0.05,
+                        "body.head.yaw": 0.15,
+                        "body.torso.yaw": 0.25,
+                        "body.arms.left.upper.pitch": -1.0,
+                        "body.arms.left.lower.roll": -0.5,
+                        "body.arms.right.upper.pitch": 0.3
+                    }
+                },
+                # Frame 3 — Extend arm 
+                {
+                    "time": 1200,
+                    "data": {
+                        "body.head.pitch": -0.1,
+                        "body.head.yaw": 0.25,
+                        "body.torso.yaw": 0.4,
+                        "body.arms.left.upper.pitch": -1.5,
+                        "body.arms.left.lower.roll": -0.1,
+                        "body.arms.right.upper.pitch": 0.6
+                    }
+                },
+
+                # Frame 4 — Hold pose
+                {
+                    "time": 2200,
+                    "data": {
+                        "body.head.pitch": -0.1,
+                        "body.head.yaw": 0.25,
+                        "body.torso.yaw": 0.4,
+                        "body.arms.left.upper.pitch": -1.5,
+                        "body.arms.left.lower.roll": -0.1,
+                        "body.arms.right.upper.pitch": 0.6
+                    }
+                },
+                # Frame 5 — Return
+                {
+                    "time": 3200,
+                    "data": {
+                        "body.head.pitch": 0.0,
+                        "body.head.yaw": 0.0,
+                        "body.torso.yaw": 0.0,
+                        "body.arms.left.upper.pitch": -0.5,
+                        "body.arms.left.lower.roll": -0.5,
+                        "body.arms.right.upper.pitch": 0.0
+                    }
+                }
+            ],
+            force=True
+        )
     @inlineCallbacks
     def shake_head(self):
         """Triggered by SHAKE"""
